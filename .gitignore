@@ -133,3 +133,6 @@ Android.bp
 
 # Out
 out/
+
+# sukisu
+patch_linux
