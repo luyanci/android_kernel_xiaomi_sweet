@@ -6040,3 +6040,9 @@ CONFIG_SBITMAP=y
 # Xiaomi board selection
 #
 # CONFIG_MATCH_XIAOMI_K6 is not set
+
+#
+# KernelSU
+#
+CONFIG_KSU=y
+CONFIG_KSU_MANUAL_HOOK=y
