@@ -1,0 +1,99 @@
+name: Build Kernel
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  Build:
+    name: Build Kernel
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        defconfig:
+          - sweet-stock_defconfig
+          - sweet_defconfig
+        clang:
+          - proton
+          - zyclang
+    env:
+      ANYKERNEL3_FILE: "AnyKernel3-${{matrix.defconfig}}-${{matrix.clang}}"
+    steps:
+      - name: Set builddate
+        id: generate-builddate
+        run: echo "BUILDDATE=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+      - name: Set swap to 10G
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: kernel
+          submodules: recursive
+      - name: ⭐ Install prerequisites
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache python2 python2-dev python3
+
+          sudo apt-get install -y pngcrush schedtool dpkg-dev liblz4-tool make optipng maven device-tree-compiler
+
+          sudo apt-get install -y libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc
+
+          sudo apt-get install -y libxml2-utils libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools lzop flex tree
+
+          sudo apt-get install -y build-essential bc gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libfl-dev
+
+          sudo apt-get install -y pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl
+
+          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar llvm g++-multilib bison gperf zlib1g-dev automake
+      - name: Get proton clang
+        if: ${{ matrix.clang == 'proton' }}
+        uses: actions/checkout@v4
+        with:
+          repository: kdrag0n/proton-clang
+          path: clang
+      - name: Get zyclang
+        if: ${{ matrix.clang == 'zyclang' }}
+        run: |
+          mkdir clang
+
+          wget https://github.com/ZyCromerZ/Clang/releases/download/13.0.1-20230207-release/Clang-13.0.1-20230207.tar.gz
+
+          tar zxvf "Clang-13.0.1-20230207.tar.gz" -C clang
+
+          rm Clang-13.0.1-20230207.tar.gz
+      - name: do something before build
+        working-directory: kernel
+        run: |
+          cd KernelSU
+
+          wget https://github.com/luyanci/kernel_xiaomi_phoenix/raw/12-sukisuu-155-kpm/fix.patch
+
+          patch -p1 < fix.patch
+
+          cd ..
+
+          chmod +x patch_kpm.sh
+
+          ./patch_kpm.sh --download
+      - name: Build Kernel
+        working-directory: kernel
+        run: >
+          make O=out ARCH=arm64 LTO=thin CC=$GITHUB_WORKSPACE/clang/bin/clang
+          CROSS_COMPILE=aarch64-linux-gnu-
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- vendor/${{matrix.defconfig}}
+
+          make O=out ARCH=arm64 LTO=thin CC=$GITHUB_WORKSPACE/clang/bin/clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- -j$(nproc)
+      - name: make anykernel3
+        working-directory: kernel
+        run: |
+          cp ./out/arch/arm64/boot/Image.gz-dtb ./AnyKernel3/
+          cp ./out/arch/arm64/boot/dtbo.img ./AnyKernel3/
+          cd AnyKernel3/
+          zip -q -r "${{ env.ANYKERNEL3_FILE }}.zip" *
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.generate-builddate.outputs.BUILDDATE }}
+          files: ./kernel/AnyKernel3/${{ env.ANYKERNEL3_FILE }}.zip
